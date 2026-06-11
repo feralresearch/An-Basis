@@ -232,6 +232,7 @@ namespace Basis.Scripts.Device_Management
             // earlier binding constructor would write "en" as a default and
             // defeat the HasSaveData("language") check.
             Basis.BasisUI.BasisLocalization.Initialize();
+            Basis.BasisUI.BasisTMPFontFallbacks.RefreshJapanesePriority();
             BasisSettingsDefaults.LoadAll();
             try
             {
@@ -268,8 +269,7 @@ namespace Basis.Scripts.Device_Management
             int Count = BaseTypes.Length;
             for (int Index = 0; Index < Count; Index++)
             {
-               BaseTypes[Index].Simulate();
-                //if a null happens here thats a failure of how you added / removed something
+               BaseTypes[Index]?.Simulate();
             }
         }
 
