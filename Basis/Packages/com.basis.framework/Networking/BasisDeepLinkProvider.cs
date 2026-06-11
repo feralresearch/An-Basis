@@ -42,7 +42,7 @@ namespace Basis.Scripts.Networking
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Initialize()
         {
-            var config = BasisClientConfiguration.Load(Application.streamingAssetsPath);
+            var config = BasisClientConfiguration.Load();
             if (!string.IsNullOrEmpty(config.DeepLinkScheme))
                 _scheme = config.DeepLinkScheme;
 

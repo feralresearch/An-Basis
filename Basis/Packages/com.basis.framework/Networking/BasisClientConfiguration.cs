@@ -16,12 +16,11 @@ namespace Basis.Scripts.Networking
         /// </summary>
         public bool SingleInstance = false;
 
-        internal const string StreamingAssetsRelativePath = "Basis/client_config.xml";
-
-        public static BasisClientConfiguration Load(string streamingAssetsPath)
+        public static BasisClientConfiguration Load()
         {
-            string path = Path.Combine(streamingAssetsPath, StreamingAssetsRelativePath);
-            if (!File.Exists(path)) return new BasisClientConfiguration();
+            string path = GetConfigPath();
+            if (!File.Exists(path))
+                return WriteDefaults(path);
             try
             {
                 var serializer = new XmlSerializer(typeof(BasisClientConfiguration));
@@ -33,6 +32,38 @@ namespace Basis.Scripts.Networking
                 Debug.LogWarning($"[BasisClientConfiguration] Failed to load {path}: {ex.Message}");
                 return new BasisClientConfiguration();
             }
+        }
+
+        private static BasisClientConfiguration WriteDefaults(string path)
+        {
+            var config = new BasisClientConfiguration();
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                var serializer = new XmlSerializer(typeof(BasisClientConfiguration));
+                using (var writer = new StreamWriter(path))
+                    serializer.Serialize(writer, config);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[BasisClientConfiguration] Could not write default config to {path}: {ex.Message}");
+            }
+            return config;
+        }
+
+        public static string GetConfigPath()
+        {
+#if UNITY_EDITOR || UNITY_STANDALONE_WIN || UNITY_STANDALONE_LINUX
+            // Editor: project root. Standalone: directory containing the exe.
+            return Path.Combine(Path.GetDirectoryName(Application.dataPath), "config", "client_config.xml");
+#elif UNITY_STANDALONE_OSX
+            // dataPath = Game.app/Contents/Data — go up three levels to reach the .app's parent.
+            return Path.Combine(
+                Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Application.dataPath))),
+                "config", "client_config.xml");
+#else
+            return Path.Combine(Application.persistentDataPath, "config", "client_config.xml");
+#endif
         }
     }
 }
