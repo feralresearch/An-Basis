@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <BasisClientConfiguration>
   <DeepLinkScheme>basisdemo</DeepLinkScheme>
+  <!-- Set to true to enforce one client instance on Windows. A second launch will
+       forward its deep link URL to the running instance and quit. Leave false to
+       allow multiple clients (e.g. for local multiplayer testing). -->
+  <SingleInstance>false</SingleInstance>
 </BasisClientConfiguration>

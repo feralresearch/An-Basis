@@ -56,7 +56,7 @@ namespace Basis.Scripts.Networking
                 }
             };
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
-            if (!InitializeSingleInstance()) return;
+            if (config.SingleInstance && !InitializeSingleInstance()) return;
             RegisterPlatformUrlScheme();
 #elif UNITY_STANDALONE_LINUX && !UNITY_EDITOR
             RegisterPlatformUrlScheme();
@@ -289,8 +289,8 @@ namespace Basis.Scripts.Networking
 
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
         // ── Single-instance + warm-start via named mutex + named pipe ──────────
-        // Application.deepLinkActivated never fires on Win32 standalone. When a
-        // basisvr:// link is clicked while the app is already running, Windows
+        // Only active when SingleInstance = true in client_config.xml.
+        // When a deep link is clicked while the app is already running, Windows
         // launches a second instance. That second instance detects the mutex,
         // pipes the URL to the primary instance, and quits immediately.
 
@@ -321,7 +321,6 @@ namespace Basis.Scripts.Networking
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool WriteFile(IntPtr file, byte[] buf, uint toWrite, out uint written, IntPtr overlapped);
 
-        // Returns true if this is the primary instance, false if secondary (caller should return immediately).
         private static bool InitializeSingleInstance()
         {
             const int ERROR_ALREADY_EXISTS = 183;
@@ -330,7 +329,6 @@ namespace Basis.Scripts.Networking
 
             if (alreadyRunning)
             {
-                // Forward URL to primary instance, then quit this second instance.
                 string url = GetCliDeepLinkUrl();
                 if (!string.IsNullOrEmpty(url))
                 {
@@ -347,7 +345,6 @@ namespace Basis.Scripts.Networking
                 return false;
             }
 
-            // Primary instance — listen for URLs forwarded by future second instances.
             Thread t = new Thread(PipeServerLoop) { IsBackground = true, Name = "BasisVR_PipeServer" };
             t.Start();
             return true;

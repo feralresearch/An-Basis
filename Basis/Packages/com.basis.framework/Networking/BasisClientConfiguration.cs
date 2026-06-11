@@ -9,6 +9,12 @@ namespace Basis.Scripts.Networking
     public class BasisClientConfiguration
     {
         public string DeepLinkScheme = "basisdemo";
+        /// <summary>
+        /// When true, only one instance of the client can run at a time on Windows.
+        /// A second launch forwards its deep link URL to the running instance and quits.
+        /// Leave false (default) to allow multiple clients, e.g. for local multiplayer testing.
+        /// </summary>
+        public bool SingleInstance = false;
 
         internal const string StreamingAssetsRelativePath = "Basis/client_config.xml";
 
