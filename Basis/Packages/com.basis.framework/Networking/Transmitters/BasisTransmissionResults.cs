@@ -36,6 +36,11 @@ public partial class BasisTransmissionResults
     // Timing / interval control
     public float intervalSeconds = 0.05f;
     public float timer = 0f;
+    // Low-rate solo sync so the server keeps tracking our position when no
+    // receivers exist (the control API reports player positions; without this
+    // a lone player never transmits and is invisible to it).
+    public const float SoloSyncIntervalSeconds = 1f;
+    private double nextSoloSyncTime;
     public float SquaredSmallestDistance;
     public float UnClampedInterval;
     public float DefaultInterval;
@@ -173,6 +178,12 @@ public partial class BasisTransmissionResults
             UpdateSendInterval(0f);
             timer = math.max(0f, timer - intervalUsedThisTick);
             IndexChanged = false;
+
+            if (Time.timeAsDouble >= nextSoloSyncTime)
+            {
+                nextSoloSyncTime = Time.timeAsDouble + SoloSyncIntervalSeconds;
+                BasisNetworkAvatarCompressor.Compress(BasisNetworkTransmitter, avatar.Animator, Time.timeAsDouble);
+            }
             return;
         }
 
