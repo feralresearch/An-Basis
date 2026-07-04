@@ -92,8 +92,12 @@ public static class BasisNetworkResourceManagement
                 {
                     if (BasisNetworkPreloadResourceManagement.ActiveSessions.TryGetValue(LLR.LoadedNetID, out var session))
                     {
-                        // Session still in progress - add late joiner to peer count
-                        session.TotalPeerCount++;
+                        // Session still in progress - add late joiner to the barrier,
+                        // but only if it can actually ack (headless clients never do)
+                        if (BasisNetworkPreloadResourceManagement.CountsTowardBarrier(NewConnection))
+                        {
+                            session.CountedPeers.Add(NewConnection.Id);
+                        }
                     }
                     else
                     {

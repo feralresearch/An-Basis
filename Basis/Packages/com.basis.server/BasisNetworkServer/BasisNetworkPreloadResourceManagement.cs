@@ -1,10 +1,12 @@
 using Basis.Network.Core;
+using BasisNetworkServer.Security;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using static BasisPermissions.PermissionManager;
 using static SerializableBasis;
 
 /// <summary>
@@ -28,16 +30,34 @@ public static class BasisNetworkPreloadResourceManagement
     public class SyncLoadSession
     {
         public LocalLoadResource Resource;
+
+        /// <summary>
+        /// Peers the barrier is waiting on. Headless clients (observers,
+        /// server-side tooling) never ack preloads and are never members.
+        /// </summary>
+        public HashSet<int> CountedPeers = new();
         public HashSet<int> ReadyPeers = new();
         public HashSet<int> FailedPeers = new();
         public DateTime StartTimeUtc;
         public CancellationTokenSource TimeoutCts;
 
-        /// <summary>
-        /// Total number of connected peers when this session started.
-        /// </summary>
-        public int TotalPeerCount;
+        public int TotalPeerCount => CountedPeers.Count;
         public bool IsComplete => ReadyPeers.Count + FailedPeers.Count >= TotalPeerCount;
+    }
+
+    /// <summary>
+    /// Whether a peer participates in the synchronized-load barrier.
+    /// Headless platforms can't preload or ack, so counting them would hold
+    /// every switch open until the timeout.
+    /// </summary>
+    public static bool CountsTowardBarrier(NetPeer peer)
+    {
+        if (NetworkServer.AuthIdentity == null ||
+            !NetworkServer.AuthIdentity.NetIDToUUID(peer, out string uuid) ||
+            string.IsNullOrEmpty(uuid) ||
+            !PermissionIntegration.TryGetPlayerMeta(uuid, out var meta))
+            return true;
+        return !BasisHeadlessConnectionPolicyManager.IsHeadlessPlatform(meta.playerPlatform);
     }
 
     /// <summary>
@@ -55,15 +75,17 @@ public static class BasisNetworkPreloadResourceManagement
         }
 
         var peerSnapshot = NetworkServer.PeerSnapshot;
-        int peerCount = peerSnapshot.Length;
 
         var session = new SyncLoadSession
         {
             Resource = resource,
             StartTimeUtc = DateTime.UtcNow,
-            TotalPeerCount = peerCount,
             TimeoutCts = new CancellationTokenSource(),
         };
+        foreach (var peer in peerSnapshot)
+        {
+            if (CountsTowardBarrier(peer)) session.CountedPeers.Add(peer.Id);
+        }
 
         if (!ActiveSessions.TryAdd(netId, session))
         {
@@ -71,7 +93,7 @@ public static class BasisNetworkPreloadResourceManagement
             return;
         }
 
-        BNL.Log($"PreloadResourceManagement: Starting synchronized load for {netId}, {peerCount} peers");
+        BNL.Log($"PreloadResourceManagement: Starting synchronized load for {netId}, waiting on {session.TotalPeerCount} of {peerSnapshot.Length} peers");
 
         // Broadcast the load resource to all clients (they will see LoadStrategy = 2
         // and handle it as a synchronized preload)
@@ -83,10 +105,10 @@ public static class BasisNetworkPreloadResourceManagement
         // Store in the main resource database too
         BasisNetworkResourceManagement.UshortNetworkDatabase.TryAdd(netId, resource);
 
-        // No peers: complete immediately rather than waiting for the 5-minute timeout
-        if (peerCount == 0)
+        // No countable peers: complete immediately rather than waiting for the 5-minute timeout
+        if (session.TotalPeerCount == 0)
         {
-            BNL.Log($"PreloadResourceManagement: No peers connected, completing {netId} immediately");
+            BNL.Log($"PreloadResourceManagement: No barrier peers connected, completing {netId} immediately");
             session.TimeoutCts.Cancel();
             BroadcastSpawnSignal(netId);
             return;
@@ -104,6 +126,12 @@ public static class BasisNetworkPreloadResourceManagement
         if (!ActiveSessions.TryGetValue(loadedNetId, out SyncLoadSession session))
         {
             BNL.LogError($"PreloadResourceManagement: Received ready from peer {peerId} for unknown session {loadedNetId}");
+            return;
+        }
+
+        if (!session.CountedPeers.Contains(peerId))
+        {
+            BNL.Log($"PreloadResourceManagement: Ignoring report from uncounted peer {peerId} for {loadedNetId}");
             return;
         }
 
@@ -230,22 +258,14 @@ public static class BasisNetworkPreloadResourceManagement
         foreach (var kvp in ActiveSessions)
         {
             var session = kvp.Value;
+            if (!session.CountedPeers.Remove(peerId)) continue;
             session.ReadyPeers.Remove(peerId);
             session.FailedPeers.Remove(peerId);
 
-            if (session.TotalPeerCount > 0)
-            {
-                session.TotalPeerCount--;
-            }
-
-            if (session.TotalPeerCount <= 0)
-            {
-                // No peers left, just clean up
-                session.TimeoutCts?.Cancel();
-                session.TimeoutCts?.Dispose();
-                ActiveSessions.TryRemove(kvp.Key, out _);
-            }
-            else if (session.IsComplete)
+            // Completing (rather than discarding) when the last counted peer
+            // leaves keeps the server database consistent: old scenes are
+            // unloaded and any uncounted peers still get the spawn signal.
+            if (session.IsComplete)
             {
                 completedSessions ??= new List<string>();
                 completedSessions.Add(kvp.Key);
